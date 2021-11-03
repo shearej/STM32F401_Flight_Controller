@@ -39,6 +39,8 @@
 #define MOTOR3 TIM_CHANNEL_3
 #define MOTOR4 TIM_CHANNEL_4
 
+#define BUTTON_INPUT_PIN GPIO_PIN_4
+#define BUTTON_INPUT_PORT GPIOA
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,6 +57,11 @@ const osThreadAttr_t handleButton_attributes = {
   .name = "handleButton",
   .stack_size = 128 * 4,
   .priority = (osPriority_t) osPriorityBelowNormal,
+};
+/* Definitions for SemaphoreButton */
+osSemaphoreId_t SemaphoreButtonHandle;
+const osSemaphoreAttr_t SemaphoreButton_attributes = {
+  .name = "SemaphoreButton"
 };
 /* USER CODE BEGIN PV */
 static uint8_t motorStarted;
@@ -116,8 +123,13 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* creation of SemaphoreButton */
+  SemaphoreButtonHandle = osSemaphoreNew(1, 1, &SemaphoreButton_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
+  osSemaphoreAcquire(SemaphoreButtonHandle, osWaitForever);
   /* USER CODE END RTOS_SEMAPHORES */
 
   /* USER CODE BEGIN RTOS_TIMERS */
@@ -286,6 +298,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PB0 */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -293,9 +311,21 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI4_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
+
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == BUTTON_INPUT_PIN)
+  {
+	osSemaphoreRelease(SemaphoreButtonHandle);
+  }
+}
 
 void StartMotor(void *argument)
 {
@@ -314,7 +344,7 @@ void StartMotor(void *argument)
 	  Set_PWM(1000, channel);
 	  osDelay(pdMS_TO_TICKS( 6000 ));
 
-	  //Set_PWM(1300, channel);
+	  //Set_PWM(1100, channel);
 
 	  motorArmed1 = 1;
 	}
@@ -370,18 +400,25 @@ void HandleButton(void *argument)
   uint32_t motor4 = MOTOR4;
 
 /* Infinite loop */
-for(;;)
-{
-  if (0 == motorStarted)
+  for(;;)
   {
-    osThreadNew(StartMotor, &motor1, NULL);
-    osThreadNew(StartMotor, &motor2, NULL);
-    osThreadNew(StartMotor, &motor3, NULL);
-    osThreadNew(StartMotor, &motor4, NULL);
+	osSemaphoreAcquire(SemaphoreButtonHandle, osWaitForever);
 
-    motorStarted = 1;
+	osDelay(pdMS_TO_TICKS(70)); //debounce and voltage spike handler
+
+	if (HAL_GPIO_ReadPin(BUTTON_INPUT_PORT, BUTTON_INPUT_PIN))
+	{
+	  if (0 == motorStarted)
+	    {
+		  osThreadNew(StartMotor, &motor1, NULL);
+		  osThreadNew(StartMotor, &motor2, NULL);
+		  osThreadNew(StartMotor, &motor3, NULL);
+		  osThreadNew(StartMotor, &motor4, NULL);
+
+		  motorStarted = 1;
+		}
+	}
   }
-}
   /* USER CODE END 5 */
 }
 

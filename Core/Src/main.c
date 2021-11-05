@@ -39,6 +39,8 @@
 #define MOTOR3 TIM_CHANNEL_3
 #define MOTOR4 TIM_CHANNEL_4
 
+#define MOTOR_MIN_PULSE 1100
+
 #define BUTTON_INPUT_PIN GPIO_PIN_4
 #define BUTTON_INPUT_PORT GPIOA
 /* USER CODE END PD */
@@ -64,7 +66,13 @@ const osSemaphoreAttr_t SemaphoreButton_attributes = {
   .name = "SemaphoreButton"
 };
 /* USER CODE BEGIN PV */
-static uint8_t motorStarted;
+static uint8_t motorsArmed;
+
+static uint32_t motor1;
+static uint32_t motor2;
+static uint32_t motor3;
+static uint32_t motor4;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -76,6 +84,9 @@ void HandleButton(void *argument);
 /* USER CODE BEGIN PFP */
 void Innit_System(void);
 void Set_PWM(uint16_t, uint32_t);
+void Run_Motors();
+void Stop_Motors();
+void Start_Motor(uint32_t);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -327,28 +338,27 @@ void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
   }
 }
 
-void StartMotor(void *argument)
+void ArmMotor(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
   uint32_t channel = *(uint32_t *) argument;
-  uint8_t motorArmed1 = 0;
+  uint8_t motorArmed = 0;
 
   /* Infinite loop */
   for(;;)
   {
-	if (0 == motorArmed1)
+	if (0 == motorArmed)
 	{
 	  Set_PWM(1915, channel);
 	  osDelay(pdMS_TO_TICKS(1000));
 	  Set_PWM(1000, channel);
 	  osDelay(pdMS_TO_TICKS( 6000 ));
 
-	  //Set_PWM(1100, channel);
+	  //Start_Motor(channel);
 
-	  motorArmed1 = 1;
+	  motorArmed = 1;
 	}
-	//Set_PWM(1600, channel);
   }
 
   osThreadTerminate(NULL);
@@ -357,28 +367,59 @@ void StartMotor(void *argument)
 
 void Set_PWM(uint16_t pulse, uint32_t channel)
 {
-	  HAL_StatusTypeDef test;
-	  HAL_TIM_PWM_Stop(&htim2, channel);
-	  TIM_OC_InitTypeDef sConfigOC;
-	  HAL_TIM_PWM_Init(&htim2);
-	  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  HAL_TIM_PWM_Stop(&htim2, channel);
+  TIM_OC_InitTypeDef sConfigOC;
+  HAL_TIM_PWM_Init(&htim2);
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
 
-	  sConfigOC.Pulse = pulse;
+  sConfigOC.Pulse = pulse;
 
-	  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-	  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-	  HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, channel);
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, channel);
 
-	  test = HAL_TIM_PWM_Start(&htim2, channel);
+  HAL_TIM_PWM_Start(&htim2, channel);
+}
 
-	  test = 0;
+void Run_Motors()
+{
+  if (0 == motorsArmed)
+	{
+	  osThreadNew(ArmMotor, &motor1, NULL);
+	  osThreadNew(ArmMotor, &motor2, NULL);
+	  osThreadNew(ArmMotor, &motor3, NULL);
+	  osThreadNew(ArmMotor, &motor4, NULL);
+
+	  motorsArmed = 1;
+	}
+
+    //Start_Motor(motor1);
+    //Start_Motor(motor2);
+    //Start_Motor(motor3);
+    //Start_Motor(motor4);
+}
+
+void Start_Motor(uint32_t channel)
+{
+	Set_PWM(MOTOR_MIN_PULSE, channel);
+}
+
+void Stop_Motors()
+{
+	Set_PWM(0, motor1);
+	Set_PWM(0, motor2);
+	Set_PWM(0, motor3);
+	Set_PWM(0, motor4);
 }
 
 void Innit_System(void)
 {
-  motorStarted = 0;
-  //motorArmed = 0;
-  //SemaphoreStartMotors = 0;
+	motorsArmed = 0;
+
+	motor1 = MOTOR1;
+    motor2 = MOTOR2;
+    motor3 = MOTOR3;
+    motor4 = MOTOR4;
 }
 
 /* USER CODE END 4 */
@@ -394,11 +435,6 @@ void HandleButton(void *argument)
 {
   /* USER CODE BEGIN 5 */
 
-  uint32_t motor1 = MOTOR1;
-  uint32_t motor2 = MOTOR2;
-  uint32_t motor3 = MOTOR3;
-  uint32_t motor4 = MOTOR4;
-
 /* Infinite loop */
   for(;;)
   {
@@ -408,15 +444,11 @@ void HandleButton(void *argument)
 
 	if (HAL_GPIO_ReadPin(BUTTON_INPUT_PORT, BUTTON_INPUT_PIN))
 	{
-	  if (0 == motorStarted)
-	    {
-		  osThreadNew(StartMotor, &motor1, NULL);
-		  osThreadNew(StartMotor, &motor2, NULL);
-		  osThreadNew(StartMotor, &motor3, NULL);
-		  osThreadNew(StartMotor, &motor4, NULL);
-
-		  motorStarted = 1;
-		}
+	  Run_Motors();
+	}
+	else
+	{
+      Stop_Motors();
 	}
   }
   /* USER CODE END 5 */
